@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model weights & checkpoints
+*.pth
+*.pth.tar
+*.pt
+checkpoints/
+pretrained/
+models/*.pth
+models/*.pt
+
+# Outputs
+output/checkpoints/
+output/logs/
+tensorboard/
+results/
+
+# Datasets
+data/
+VisEvent_SOT_Benchmark-main/
+
+# VOT toolkit
+vot-toolkit-python/
+
+# Logs
+*.log
+
+# Misc
+mycode/
+modelsets/
