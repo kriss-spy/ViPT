@@ -36,16 +36,32 @@ class ViPTrack(nn.Module):
         if self.aux_loss:
             self.box_head = _get_clones(self.box_head, 6)
 
+
+
+
+    '''this place may be need to change'''
     def forward(self, template: torch.Tensor,
                 search: torch.Tensor,
+                online_template=None,
+                online_ce_mask=None,
                 ce_template_mask=None,
                 ce_keep_rate=None,
                 return_last_attn=False,
+                online_score=None,
+                track_query=None,
+                token_len=None,
                 ):
-        x, aux_dict = self.backbone(z=template, x=search,
+
+        #更改：前向支持额外输入online模板
+        x, aux_dict = self.backbone(z=template, x=search,online_z=online_template,
                                     ce_template_mask=ce_template_mask,
+                                    online_ce_mask=online_ce_mask,
+                                    online_score=online_score,
                                     ce_keep_rate=ce_keep_rate,
-                                    return_last_attn=return_last_attn, )
+                                    return_last_attn=return_last_attn,
+                                    track_query = track_query,
+                                    token_len = token_len,
+                                    )
 
         # Forward head
         feat_last = x
@@ -99,6 +115,7 @@ def build_viptrack(cfg, training=True):
     else:
         pretrained = ''
 
+    print(cfg.MODEL.BACKBONE.TYPE)
     if cfg.MODEL.BACKBONE.TYPE == 'vit_base_patch16_224_prompt':
         backbone = vit_base_patch16_224_prompt(pretrained, drop_path_rate=cfg.TRAIN.DROP_PATH_RATE,
                                                search_size=to_2tuple(cfg.DATA.SEARCH.SIZE),

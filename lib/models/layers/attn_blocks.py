@@ -90,7 +90,7 @@ class CEBlock(nn.Module):
 
         self.keep_ratio_search = keep_ratio_search
 
-    def forward(self, x, global_index_template, global_index_search, mask=None, ce_template_mask=None, keep_ratio_search=None):
+    def forward(self, x, global_index_template, global_index_search, mask=None, ce_template_mask=None, keep_ratio_search=None,add_cls_token=None,query_len=None):
         x_attn, attn = self.attn(self.norm1(x), mask, True)
         x = x + self.drop_path(x_attn)
         lens_t = global_index_template.shape[1]
@@ -98,7 +98,17 @@ class CEBlock(nn.Module):
         removed_index_search = None
         if self.keep_ratio_search < 1 and (keep_ratio_search is None or keep_ratio_search < 1):
             keep_ratio_search = self.keep_ratio_search if keep_ratio_search is None else keep_ratio_search
-            x, global_index_search, removed_index_search = candidate_elimination(attn, x, lens_t, keep_ratio_search, global_index_search, ce_template_mask)
+            if add_cls_token:
+                tokens=x[:,:query_len,:]
+                x, global_index_search, removed_index_search = candidate_elimination(attn[:, :, query_len:, query_len:],
+                                                                                     x[:, query_len:, :],
+                                                                                     lens_t,
+                                                                                     keep_ratio_search, global_index_search,
+                                                                                     ce_template_mask)
+                x=torch.cat([tokens,x],dim=1)
+            else:
+                x, global_index_search, removed_index_search = candidate_elimination(attn, x, lens_t, keep_ratio_search,
+                                                                                     global_index_search, ce_template_mask)
 
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x, global_index_template, global_index_search, removed_index_search, attn

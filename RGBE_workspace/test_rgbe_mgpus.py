@@ -8,7 +8,7 @@ prj = join(dirname(__file__), '..')
 if prj not in sys.path:
     sys.path.append(prj)
 
-from lib.test.tracker.vipt import ViPTTrack
+from lib.test.tracker.vipt_online_template import ViPTTrack
 import lib.test.parameter.vipt as rgbe_prompt_params
 from lib.train.dataset.depth_utils import get_x_frame
 import multiprocessing
