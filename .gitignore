@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Byte-compiled / optimized Python files
 __pycache__/
 *.py[cod]
@@ -7,10 +8,19 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Distribution / packaging
+=======
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+>>>>>>> fp16-clean
 *.egg-info/
 dist/
 build/
 
+<<<<<<< HEAD
 # PyTorch / model weights
 *.pth
 *.pth.tar
@@ -21,10 +31,42 @@ modelsets/
 output/
 tensorboard/
 *.log
+=======
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model weights & checkpoints
+*.pth
+*.pth.tar
+*.pt
+checkpoints/
+pretrained/
+models/*.pth
+models/*.pt
+
+# Outputs
+output/checkpoints/
+output/logs/
+tensorboard/
+results/
+
+# Datasets
+data/
+VisEvent_SOT_Benchmark-main/
+>>>>>>> fp16-clean
 
 # VOT toolkit
 vot-toolkit-python/
 
+<<<<<<< HEAD
 # External benchmarks
 VisEvent_SOT_Benchmark-main/
 
@@ -54,3 +96,11 @@ VisEvent_SOT_Benchmark-main/results/
 *.tar
 *.zip
 *.tar.gz
+=======
+# Logs
+*.log
+
+# Misc
+mycode/
+modelsets/
+>>>>>>> fp16-clean

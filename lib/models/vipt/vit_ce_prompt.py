@@ -181,8 +181,8 @@ class VisionTransformerCE(VisionTransformer):
 
         self.init_weights(weight_init)
 
-    def forward_features(self, z, x, mask_z=None, mask_x=None,
-                         ce_template_mask=None, ce_keep_rate=None,
+    def forward_features(self, z, x,online_z=None, mask_z=None, mask_x=None,
+                         ce_template_mask=None,online_ce_mask=None, ce_keep_rate=None,online_score=None,
                          return_last_attn=False):
 
         B, H, W = x.shape[0], x.shape[2], x.shape[3]
@@ -240,6 +240,52 @@ class VisionTransformerCE(VisionTransformer):
         z += self.pos_embed_z
         x += self.pos_embed_x
 
+        # ---------- 新增 online template 处理 ，按照和 z 相同的方式 ----------
+        if online_z is not None:
+            # 分离 online 的 RGB 和 DTE
+            oz_rgb = online_z[:, :3, :, :]
+            oz_dte = online_z[:, 3:, :, :]
+            # patch embedding
+            oz = self.patch_embed(oz_rgb)
+            oz_dte = self.patch_embed_prompt(oz_dte)
+            # 对 online 执行同样的 prompt 处理（与 z 相同）
+            if self.prompt_type in ['vipt_shaw', 'vipt_deep']:
+                oz_feat = token2feature(self.prompt_norms[0](oz))
+                oz_dte_feat = token2feature(self.prompt_norms[0](oz_dte))
+                oz_feat = torch.cat([oz_feat, oz_dte_feat], dim=1)
+                oz_feat = self.prompt_blocks[0](oz_feat)
+                oz_dte = feature2token(oz_feat)
+                oz_prompted=oz_dte
+                #event数据是不具有连续性的，
+
+                oz = oz + oz_dte
+            else:
+                oz = oz + oz_dte
+
+            # 添加位置编码（复用 pos_embed_z），因为online模板和原始模板大小永远一致
+            oz += self.pos_embed_z
+            #遵循原始的处理流程，会将z和x合成一个向量
+            if online_score is not None:
+                z = torch.cat([z, oz*online_score], dim=1)
+            else:
+                z = torch.cat([z, oz], dim=1)
+
+            # ---------- 处理 CE mask ----------
+            if ce_template_mask is not None:
+                # 始终有一个外部传入的 online_ce_mask
+                if online_ce_mask is not None:
+                    ce_template_mask_new = torch.cat([ce_template_mask, online_ce_mask], dim=1)
+                else:
+
+                    #因而这一部分没有启用
+                    print('online_mask_error')
+                    exit()
+                    # 直接复制原始 mask
+                    ce_template_mask_new = torch.cat([ce_template_mask, ce_template_mask], dim=1)
+                ce_template_mask = ce_template_mask_new
+
+
+
         if self.add_sep_seg:
             x += self.search_segment_pos_embed
             z += self.template_segment_pos_embed
@@ -250,8 +296,13 @@ class VisionTransformerCE(VisionTransformer):
 
         x = self.pos_drop(x)
 
-        lens_z = self.pos_embed_z.shape[1]
+        original_lens_z = self.pos_embed_z.shape[1]
         lens_x = self.pos_embed_x.shape[1]
+
+        if online_z is not None:
+            lens_z = original_lens_z*2  # online template 与 z 长度相同
+        else:
+            lens_z = original_lens_z
 
         global_index_t = torch.linspace(0, lens_z - 1, lens_z, dtype=torch.int64).to(x.device)
         global_index_t = global_index_t.repeat(B, 1)
@@ -276,7 +327,7 @@ class VisionTransformerCE(VisionTransformer):
                     if removed_indexes_s and removed_indexes_s[0] is not None:
                         removed_indexes_cat = torch.cat(removed_indexes_s, dim=1)
                         pruned_lens_x = lens_x - lens_x_new
-                        pad_x = torch.zeros([B, pruned_lens_x, x.shape[2]], device=x.device)
+                        pad_x = torch.zeros([B, pruned_lens_x, x.shape[2]], device=x.device, dtype=x.dtype)
                         x = torch.cat([x, pad_x], dim=1)
                         index_all = torch.cat([global_index_s, removed_indexes_cat], dim=1)
                         C = x.shape[-1]
@@ -285,25 +336,55 @@ class VisionTransformerCE(VisionTransformer):
                     x = torch.cat([z, x], dim=1)
 
                     # prompt
+                    #再额外输入online模板时，对合并的online模板的数据和原始数据进行分离，分开在prompt侧枝进行处理后再合并
+
                     x = self.prompt_norms[i - 1](x)  # todo
                     z_tokens = x[:, :lens_z, :]
                     x_tokens = x[:, lens_z:, :]
+
+                    if online_z is not None:
+                        online_z_tokens=z_tokens[:,lens_z//2:,]
+                        z_tokens = z_tokens[:, :lens_z // 2, :]
+
+                    # print(i)
+                    # print(lens_z)
+                    # print(z_tokens.shape)
+                    # print(x_tokens.shape)
+
                     z_feat = token2feature(z_tokens)
                     x_feat = token2feature(x_tokens)
+
+                    # if online_z is not None:
+                    #     oz_feat=token2feature(online_z_tokens)
+                    #     z_prompted+=oz_prompted
 
                     z_prompted = self.prompt_norms[i](z_prompted)
                     x_prompted = self.prompt_norms[i](x_prompted)
                     z_prompt_feat = token2feature(z_prompted)
                     x_prompt_feat = token2feature(x_prompted)
 
+                    if online_z is not None:
+                        oz_feat = token2feature(online_z_tokens)
+                        oz_prompted=self.prompt_norms[i](oz_prompted)
+                        oz_prompt_feat = token2feature(oz_prompted)
+                        oz_feat=torch.cat([oz_feat,oz_prompt_feat],dim=1)
+                        oz_feat=self.prompt_blocks[i](oz_feat)
+                        oz=feature2token(oz_feat)
+                        oz_prompted=oz
+
+
                     z_feat = torch.cat([z_feat, z_prompt_feat], dim=1)
                     x_feat = torch.cat([x_feat, x_prompt_feat], dim=1)
-                    z_feat = self.prompt_blocks[i](z_feat)
+                    z_feat = self.prompt_blocks[i](z_feat)#层注意力
                     x_feat = self.prompt_blocks[i](x_feat)
 
                     z = feature2token(z_feat)
                     x = feature2token(x_feat)
                     z_prompted, x_prompted = z, x
+
+                    #和原来一样进行cat合并，确保一致性
+                    if online_z is not None:
+                        z=torch.cat([oz,z],dim=1)
 
                     x = combine_tokens(z, x, mode=self.cat_mode)
                     # re-conduct CE
@@ -326,7 +407,7 @@ class VisionTransformerCE(VisionTransformer):
             removed_indexes_cat = torch.cat(removed_indexes_s, dim=1)
 
             pruned_lens_x = lens_x - lens_x_new
-            pad_x = torch.zeros([B, pruned_lens_x, x.shape[2]], device=x.device)
+            pad_x = torch.zeros([B, pruned_lens_x, x.shape[2]], device=x.device, dtype=x.dtype)
             x = torch.cat([x, pad_x], dim=1)
             index_all = torch.cat([global_index_s, removed_indexes_cat], dim=1)
             # recover original token order
@@ -336,20 +417,27 @@ class VisionTransformerCE(VisionTransformer):
         x = recover_tokens(x, lens_z_new, lens_x, mode=self.cat_mode)
 
         # re-concatenate with the template, which may be further used by other modules
+        #注意这里为了保持后向支持，对head部分的代码不进行修改，对online模板的数据和原始模板的数据分离相加，归一化，然后再输入head，这样就和原来head的输入一样了
+        if online_z is not None:
+            oz=z[:,:lens_z_new//2]
+            z=z[:,lens_z_new//2:]
+            z=self.prompt_norms[-1](z+oz)
+
         x = torch.cat([z, x], dim=1)
 
         aux_dict = {
-            "attn": attn,
+            "attn": attn, # used for visualization
             "removed_indexes_s": removed_indexes_s,  # used for visualization
         }
 
         return x, aux_dict
 
-    def forward(self, z, x, ce_template_mask=None, ce_keep_rate=None,
+    def forward(self, z, x, online_z=None,ce_template_mask=None, online_ce_mask=None,ce_keep_rate=None,online_score=None,
                 tnc_keep_rate=None,
                 return_last_attn=False):
 
-        x, aux_dict = self.forward_features(z, x, ce_template_mask=ce_template_mask, ce_keep_rate=ce_keep_rate,)
+        x, aux_dict = self.forward_features(z, x, online_score=online_score,online_z=online_z,online_ce_mask=online_ce_mask,ce_template_mask=ce_template_mask, ce_keep_rate=ce_keep_rate,)
+
 
         return x, aux_dict
 

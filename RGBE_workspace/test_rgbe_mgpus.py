@@ -8,7 +8,7 @@ prj = join(dirname(__file__), '..')
 if prj not in sys.path:
     sys.path.append(prj)
 
-from lib.test.tracker.vipt import ViPTTrack
+from lib.test.tracker.vipt_online_template import ViPTTrack
 import lib.test.parameter.vipt as rgbe_prompt_params
 from lib.train.dataset.depth_utils import get_x_frame
 import multiprocessing
@@ -27,7 +27,7 @@ def genConfig(seq_path, set_type):
     return RGB_img_list, E_img_list, RGB_gt, absent_label
 
 
-def run_sequence(seq_name, seq_home, dataset_name, yaml_name, num_gpu=1, epoch=60, debug=0, script_name='prompt'):
+def run_sequence(seq_name, seq_home, dataset_name, yaml_name, num_gpu=1, epoch=60, debug=0, script_name='prompt', use_fp16=False):
     try:
         worker_name = multiprocessing.current_process().name
         worker_id = int(worker_name[worker_name.find('-') + 1:]) - 1
@@ -49,6 +49,7 @@ def run_sequence(seq_name, seq_home, dataset_name, yaml_name, num_gpu=1, epoch=6
 
     if script_name == 'vipt':
         params = rgbe_prompt_params.parameters(yaml_name, epoch)
+        params.use_fp16 = use_fp16
         ostrack = ViPTTrack(params)  # "VisEvent"
         tracker = ViPT_RGBE(tracker=ostrack)
 
@@ -114,6 +115,7 @@ if __name__ == '__main__':
     parser.add_argument('--mode', default='parallel', type=str, help='running mode: [sequential , parallel]')
     parser.add_argument('--debug', default=0, type=int, help='to vis tracking results')
     parser.add_argument('--video', type=str, default='', help='Sequence name for debug.')
+    parser.add_argument('--use_fp16', action='store_true', help='Enable FP16 mixed-precision inference')
     args = parser.parse_args()
 
     yaml_name = args.yaml_name
@@ -131,13 +133,13 @@ if __name__ == '__main__':
 
     start = time.time()
     if args.mode == 'parallel':
-        sequence_list = [(s, seq_home, dataset_name, args.yaml_name, args.num_gpus, args.epoch, args.debug, args.script_name) for s in seq_list]
+        sequence_list = [(s, seq_home, dataset_name, args.yaml_name, args.num_gpus, args.epoch, args.debug, args.script_name, args.use_fp16) for s in seq_list]
         multiprocessing.set_start_method('spawn', force=True)
         with multiprocessing.Pool(processes=args.threads) as pool:
             pool.starmap(run_sequence, sequence_list)
     else:
         seq_list = [args.video] if args.video != '' else seq_list
-        sequence_list = [(s, seq_home, dataset_name, args.yaml_name, args.num_gpus, args.epoch, args.debug, args.script_name) for s in seq_list]
+        sequence_list = [(s, seq_home, dataset_name, args.yaml_name, args.num_gpus, args.epoch, args.debug, args.script_name, args.use_fp16) for s in seq_list]
         for seqlist in sequence_list:
             run_sequence(*seqlist)
     print(f"Totally cost {time.time()-start} seconds!")
